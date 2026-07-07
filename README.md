@@ -159,19 +159,7 @@ No internet connection is required.
 
 ---
 
-## 📸 Screenshots
 
-Add screenshots here after uploading them.
-
-Examples:
-
-- Home Screen
-- Live Vitals Dashboard
-- Hospital Routing
-- Crew Intervention
-- Replay Mode
-
----
 
 ## 🎯 Learning Objectives
 
