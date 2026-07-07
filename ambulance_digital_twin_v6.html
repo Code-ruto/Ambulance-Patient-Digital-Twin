@@ -1,0 +1,1557 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ambulance Patient Digital Twin — Educational Prototype (v6)</title>
+<style>
+  /* ============ DESIGN TOKENS ============ */
+  :root{
+    --bg:#EEF2F5;            /* cool clinical grey */
+    --panel:#FFFFFF;
+    --ink:#12222E;           /* deep dispatch navy */
+    --ink-soft:#4A5B66;
+    --line:#D6DEE4;
+    --accent:#0A6E8A;        /* dispatch teal */
+    --good:#0E7C4A;  --good-bg:#E4F3EB;
+    --warn:#9A5B00;  --warn-bg:#FCEFD9;
+    --crit:#C0182E;  --crit-bg:#FBE4E7;
+    --mono:"SF Mono","Cascadia Mono","Consolas","Menlo",ui-monospace,monospace;
+    --sans:"Segoe UI","Helvetica Neue",system-ui,Arial,sans-serif;
+    --radius:10px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.45}
+  button{font-family:var(--sans)}
+
+  /* ============ HEADER ============ */
+  header{background:var(--ink);color:#EAF3F7;padding:14px 22px;display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+  header h1{font-size:19px;margin:0;font-weight:650;letter-spacing:.2px}
+  header .sub{font-size:12.5px;color:#9FB6C1}
+  .sim-chip{background:#213947;color:#BFE3EF;border:1px solid #35586B;border-radius:999px;
+            font-size:11.5px;padding:3px 11px;font-weight:600;letter-spacing:.4px}
+  #connArea{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap}
+  .conn{display:flex;align-items:center;gap:6px;background:#1B303D;border:1px solid #2E4C5D;
+        border-radius:999px;padding:3px 11px;font-size:12px;color:#CFE4EC}
+  .conn .dot{width:8px;height:8px;border-radius:50%;background:#3FCB7E}
+  .conn.partial .dot{background:#F0AD2D}
+  .conn.down .dot{background:#F05A6B;animation:blink 1s infinite}
+  @keyframes blink{50%{opacity:.25}}
+  @media (prefers-reduced-motion: reduce){ .conn.down .dot{animation:none} }
+
+  .disclaimer{background:#FFF4D6;border-bottom:1px solid #E8D9A0;color:#6B5200;
+              text-align:center;font-size:12.5px;padding:5px 10px;font-weight:600}
+
+  /* ============ EARLY-WARNING BANNER ============ */
+  #ewsBanner{margin:16px 22px 0;border-radius:var(--radius);padding:14px 20px;display:flex;
+             flex-wrap:wrap;align-items:center;gap:18px;border:2px solid var(--line);background:var(--panel)}
+  #ewsBanner.low{border-color:var(--good);background:var(--good-bg)}
+  #ewsBanner.medium{border-color:var(--warn);background:var(--warn-bg)}
+  #ewsBanner.high{border-color:var(--crit);background:var(--crit-bg)}
+  #ewsScore{font-family:var(--mono);font-size:44px;font-weight:700;line-height:1}
+  .ews-label{font-size:12px;letter-spacing:.8px;font-weight:700;color:var(--ink-soft);text-transform:uppercase}
+  #ewsBand{font-size:17px;font-weight:750}
+  #ewsBreakdown{font-size:12.5px;color:var(--ink-soft);font-family:var(--mono)}
+  .protocol-tag{font-size:11px;background:rgba(0,0,0,.06);border-radius:4px;padding:2px 7px;
+                color:var(--ink-soft);font-weight:600}
+
+  /* ============ CONTROLS ============ */
+  #controls{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:14px 22px}
+  select,.btn{border-radius:8px;border:1px solid var(--line);padding:9px 14px;font-size:14px;background:var(--panel);color:var(--ink);cursor:pointer}
+  select:focus-visible,.btn:focus-visible,input:focus-visible,button:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:650}
+  .btn:disabled{opacity:.5;cursor:not-allowed}
+  #clock{margin-left:auto;font-family:var(--mono);font-size:14px;color:var(--ink-soft)}
+
+  /* ============ WALKTHROUGH / DEMO / ERROR BARS ============ */
+  #demoCaption{display:none;margin:0 22px 8px;background:var(--ink);color:#EAF6FB;border-radius:8px;
+               padding:10px 16px;font-size:15px;font-weight:550}
+  #demoCaption.on{display:block}
+  #demoCaption b{color:#7ED4EC}
+  #walkBar{display:none;margin:0 22px 8px;background:var(--accent);color:#fff;border-radius:8px;padding:10px 16px;font-size:15px}
+  #walkBar.on{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+  #walkText{flex:1;min-width:220px}
+  #walkStep{font-family:var(--mono);font-size:12px;opacity:.85}
+  #walkBar button{border:1px solid rgba(255,255,255,.75);background:transparent;color:#fff;border-radius:6px;padding:5px 12px;font-weight:650;cursor:pointer}
+  #errBanner{display:none;margin:0 22px 8px;background:var(--crit-bg);border:2px solid var(--crit);color:var(--crit);border-radius:8px;padding:10px 16px;font-weight:650}
+  #errBanner.on{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+  #errBanner button{border:1px solid var(--crit);background:#fff;color:var(--crit);border-radius:6px;padding:5px 12px;font-weight:650;cursor:pointer}
+
+  /* ============ GRID ============ */
+  #grid{display:grid;grid-template-columns:1.25fr 1fr;gap:16px;padding:8px 22px 30px}
+  @media(max-width:980px){#grid{grid-template-columns:1fr}}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px}
+  .panel h2{margin:0 0 10px;font-size:13px;letter-spacing:.9px;text-transform:uppercase;color:var(--ink-soft);font-weight:750}
+
+  /* ============ VITAL CARDS ============ */
+  #vitals{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  @media(max-width:560px){#vitals{grid-template-columns:1fr}}
+  .vital{border:2px solid var(--line);border-radius:var(--radius);padding:12px 14px;background:var(--panel)}
+  .vital.good{border-color:var(--good);background:var(--good-bg)}
+  .vital.warn{border-color:var(--warn);background:var(--warn-bg)}
+  .vital.crit{border-color:var(--crit);background:var(--crit-bg)}
+  .vital .name{font-size:12px;font-weight:750;letter-spacing:.6px;text-transform:uppercase;color:var(--ink-soft)}
+  .vital .num{font-family:var(--mono);font-size:36px;font-weight:700;line-height:1.15;display:inline-block;transition:transform .18s}
+  .vital .num.bump{transform:scale(1.12)}
+  @media (prefers-reduced-motion: reduce){ .vital .num{transition:none} .vital .num.bump{transform:none} }
+  .vital .unit{font-size:13px;color:var(--ink-soft);font-family:var(--mono)}
+  .status-word{display:inline-block;font-size:11.5px;font-weight:750;border-radius:4px;padding:1px 7px;margin-top:2px}
+  .good .status-word{background:var(--good);color:#fff}
+  .warn .status-word{background:var(--warn);color:#fff}
+  .crit .status-word{background:var(--crit);color:#fff}
+  .vital svg{display:block;width:100%;height:52px;margin-top:6px}
+  .forecast-warn{font-size:12px;color:var(--crit);font-weight:650;margin-top:4px;min-height:16px}
+  .nudge{display:flex;gap:6px;align-items:center;margin-top:6px;flex-wrap:wrap}
+  .nudge button{width:30px;height:26px;border-radius:6px;border:1px solid var(--line);background:#fff;font-weight:700;cursor:pointer;font-size:15px;line-height:1}
+  .conf{font-size:11.5px;border:1px solid var(--line);border-radius:6px;padding:2px 4px;background:#fff}
+  .conf.estimated{border-color:var(--warn);color:var(--warn)}
+  .conf.missing{border-color:var(--crit);color:var(--crit)}
+
+  #sliderRow{margin-top:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  #sliderRow label{font-size:13px;font-weight:650}
+  #spo2Slider{flex:1;min-width:150px;accent-color:var(--accent)}
+
+  /* ============ INTERVENTIONS ============ */
+  #ivPanel{margin-top:14px;border-top:1px dashed var(--line);padding-top:12px}
+  .iv-btns{display:flex;gap:8px;flex-wrap:wrap}
+  .iv-btn{border:1px solid var(--accent);color:var(--accent);background:#fff;border-radius:8px;padding:8px 12px;font-weight:650;cursor:pointer;font-size:13px}
+  .iv-btn.active{background:var(--accent);color:#fff}
+  .iv-btn:disabled{opacity:.45;cursor:not-allowed}
+  .iv-note{font-size:12px;color:var(--ink-soft);margin-top:6px}
+
+  /* ============ REPLAY ============ */
+  #replayRow{display:flex;align-items:center;gap:10px;margin-top:12px;flex-wrap:wrap;border-top:1px dashed var(--line);padding-top:12px}
+  #replayRow label{font-size:13px;font-weight:650}
+  #replaySlider{flex:1;min-width:140px;accent-color:var(--accent)}
+  #replayBadge{display:none;font-size:11.5px;background:var(--warn);color:#fff;border-radius:4px;padding:2px 8px;font-weight:750}
+  body.replaying #replayBadge{display:inline-block}
+
+  /* forecast scorecard */
+  #fcCard{margin-top:12px;border:1px dashed var(--line);border-radius:var(--radius);padding:10px 14px;font-size:13px;display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+  #fcRate{font-family:var(--mono);font-weight:700;font-size:20px}
+
+  /* completeness */
+  #compWrap{margin-top:12px}
+  #compBarOuter{height:12px;background:#E2E9EE;border-radius:999px;overflow:hidden;border:1px solid var(--line)}
+  #compBar{height:100%;background:var(--accent);width:100%;transition:width .4s}
+  #compText{font-size:12.5px;color:var(--ink-soft);margin-top:4px}
+
+  /* shock index */
+  #shockCard{margin-top:12px;border:2px solid var(--line);border-radius:var(--radius);padding:12px 14px;display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+  #shockCard.flag{border-color:var(--crit);background:var(--crit-bg)}
+  #shockVal{font-family:var(--mono);font-size:30px;font-weight:700}
+  #shockFormula{font-size:12.5px;color:var(--ink-soft);font-family:var(--mono)}
+
+  /* ============ DECISIONS ============ */
+  .decision{border:1px solid var(--line);border-radius:var(--radius);padding:12px 14px;margin-bottom:10px;background:#FBFDFE}
+  .decision .d-head{display:flex;justify-content:space-between;gap:8px;align-items:baseline;flex-wrap:wrap}
+  .decision .d-title{font-size:12px;font-weight:750;letter-spacing:.6px;text-transform:uppercase;color:var(--ink-soft)}
+  .decision .d-value{font-size:18px;font-weight:750;margin:4px 0 2px}
+  .decision .d-value.crit-text{color:var(--crit)}
+  .decision .d-value.warn-text{color:var(--warn)}
+  .decision .d-value.good-text{color:var(--good)}
+  .decision .d-reason{font-size:12.5px;color:var(--ink-soft)}
+  .d-actions{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;align-items:center}
+  .d-actions button{font-size:12px;padding:4px 10px;border-radius:6px;border:1px solid var(--line);background:#fff;cursor:pointer;font-weight:650}
+  .d-actions button.accept{border-color:var(--good);color:var(--good)}
+  .d-actions button.override{border-color:var(--warn);color:var(--warn)}
+  .ovr-badge{font-size:11.5px;background:var(--warn);color:#fff;border-radius:4px;padding:2px 7px;font-weight:700}
+  .acc-badge{font-size:11.5px;background:var(--good);color:#fff;border-radius:4px;padding:2px 7px;font-weight:700}
+  .ovr-select{font-size:12px;padding:3px 6px;border-radius:6px;border:1px solid var(--warn)}
+
+  /* ============ HOSPITAL BOARD ============ */
+  .hosp{display:flex;gap:10px;align-items:center;padding:7px 4px;border-bottom:1px dashed var(--line);flex-wrap:wrap;font-size:13.5px}
+  .hosp:last-child{border-bottom:0}
+  .hosp .h-name{font-weight:650;min-width:165px}
+  .hosp .h-type{color:var(--ink-soft);font-size:12px}
+  .hosp .h-eta{font-family:var(--mono);font-size:12.5px;color:var(--ink-soft)}
+  .h-status{font-size:11.5px;font-weight:750;border-radius:4px;padding:1px 8px}
+  .h-status.open{background:var(--good-bg);color:var(--good)}
+  .h-status.busy{background:var(--warn-bg);color:var(--warn)}
+  .h-status.diversion{background:var(--crit);color:#fff}
+  .h-routed{font-size:11.5px;background:var(--accent);color:#fff;border-radius:4px;padding:1px 8px;font-weight:750}
+
+  /* ============ ROSTER ============ */
+  .ros{display:flex;gap:10px;align-items:center;padding:6px 6px;border-bottom:1px dashed var(--line);font-size:13px}
+  .ros:last-child{border-bottom:0}
+  .ros.me{background:#EAF4F8;border-radius:6px}
+  .ros .r-unit{font-weight:700;min-width:78px}
+  .ros .r-pat{color:var(--ink-soft)}
+  .ros .r-ews{font-family:var(--mono);font-weight:700;margin-left:auto}
+  .r-band{font-size:11px;font-weight:750;border-radius:4px;padding:1px 7px}
+  .r-band.Low{background:var(--good-bg);color:var(--good)}
+  .r-band.Medium{background:var(--warn-bg);color:var(--warn)}
+  .r-band.High{background:var(--crit);color:#fff}
+
+  /* ============ INVENTORY ============ */
+  #invList{list-style:none;margin:0;padding:0}
+  #invList li{display:flex;gap:10px;align-items:baseline;padding:7px 4px;border-bottom:1px dashed var(--line);flex-wrap:wrap}
+  #invList li:last-child{border-bottom:0}
+  .inv-name{font-weight:650;min-width:150px}
+  .inv-stock{font-family:var(--mono);font-size:12.5px;color:var(--ink-soft)}
+  .inv-tag{font-size:11.5px;font-weight:750;border-radius:4px;padding:1px 8px}
+  .inv-tag.needed{background:var(--crit);color:#fff}
+  .inv-tag.standby{background:#E2E9EE;color:var(--ink-soft)}
+  .inv-reason{flex-basis:100%;font-size:12px;color:var(--crit);padding-left:2px}
+
+  /* ============ EVENT LOG ============ */
+  #logList{list-style:none;margin:0;padding:0;max-height:330px;overflow-y:auto;font-size:13px}
+  #logList li{padding:6px 4px;border-bottom:1px dashed var(--line);display:flex;gap:10px}
+  #logList .t{font-family:var(--mono);color:var(--ink-soft);white-space:nowrap}
+  #logList li.crit .msg{color:var(--crit);font-weight:650}
+  #logList li.warn .msg{color:var(--warn);font-weight:600}
+  #logList li.ok .msg{color:var(--good)}
+
+  footer{padding:0 22px 26px;font-size:12px;color:var(--ink-soft)}
+
+  /* ============ HELP MODAL ============ */
+  #helpModal{display:none;position:fixed;inset:0;background:rgba(10,25,35,.55);z-index:50;padding:20px}
+  #helpModal.on{display:flex;align-items:center;justify-content:center}
+  #helpBox{background:#fff;border-radius:12px;max-width:580px;max-height:85vh;overflow:auto;padding:22px 26px}
+  #helpBox h3{margin-top:0}
+  #helpBox li{margin-bottom:7px}
+  #helpBox .close-x{float:right;border:1px solid var(--line);background:#fff;border-radius:6px;padding:4px 10px;cursor:pointer;font-weight:700}
+
+  /* ============ PRESENTATION MODE ============ */
+  body.pres .nudge, body.pres .conf, body.pres #sliderRow, body.pres .protocol-tag,
+  body.pres footer, body.pres #compWrap, body.pres #rosterPanel, body.pres #fcCard,
+  body.pres #replayRow, body.pres .sub{display:none !important}
+  body.pres .vital .num{font-size:54px}
+  body.pres #ewsScore{font-size:66px}
+  body.pres #ewsBand{font-size:23px}
+  body.pres .decision .d-value{font-size:25px}
+  body.pres{font-size:17px}
+  body.pres .decision .d-reason,body.pres #logList{font-size:15px}
+
+  /* ============ PRINT VIEW ============ */
+  #printArea{display:none}
+  @media print{
+    body > *{display:none !important}
+    #printArea{display:block !important;color:#000;font-family:Georgia,"Times New Roman",serif;padding:10px}
+    #printArea h1{font-size:20px;margin:0 0 2px}
+    #printArea .p-sub{font-size:11px;color:#444;margin-bottom:12px}
+    #printArea h2{font-size:14px;margin:14px 0 6px;border-bottom:1px solid #999;padding-bottom:2px}
+    #printArea table{width:100%;border-collapse:collapse;font-size:11.5px}
+    #printArea td,#printArea th{border:1px solid #999;padding:3px 6px;text-align:left;vertical-align:top}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>Ambulance Patient Digital Twin</h1>
+    <div class="sub">Live decision support — recalculates as patient data arrives · v6</div>
+  </div>
+  <span class="sim-chip">SIMULATED DATA</span>
+  <div id="connArea" aria-label="Data feed connection status (simulated)">
+    <span class="conn" id="connMonitor"><span class="dot"></span>Monitor: connected</span>
+    <span class="conn" id="connCad"><span class="dot"></span>Dispatch/CAD: connected</span>
+    <span class="conn partial" id="connRecord"><span class="dot"></span>Patient record: partial</span>
+  </div>
+</header>
+
+<div class="disclaimer">⚠ Educational prototype — not for real clinical use. All data feeds, hospitals, protocols, and device links are simulated for demonstration.</div>
+
+<!-- Early-warning score banner (adapted NEWS2) -->
+<section id="ewsBanner" class="low" aria-live="polite">
+  <div>
+    <div class="ews-label">Early-warning score</div>
+    <div id="ewsScore">0</div>
+  </div>
+  <div>
+    <div id="ewsBand">✔ LOW RISK</div>
+    <div id="ewsBreakdown">HR 0 · SpO₂ 0 · RR 0 · Sys BP 0</div>
+    <span class="protocol-tag" id="ewsProtocol">Early-warning: NEWS2 (adapted — 4 of 7 parameters, simulated)</span>
+  </div>
+</section>
+
+<div id="controls">
+  <label for="scenarioSel" style="font-weight:650;font-size:14px">Scenario</label>
+  <select id="scenarioSel" aria-label="Patient scenario"></select>
+  <button class="btn primary" id="btnStart">▶ Start transport</button>
+  <button class="btn" id="btnReset">↺ Reset</button>
+  <button class="btn" id="btnDemo">🎬 Run demo</button>
+  <button class="btn" id="btnWalk">🧭 Walkthrough</button>
+  <button class="btn" id="btnPres">🖥 Presentation mode</button>
+  <button class="btn" id="btnHelp">❓ How to read this</button>
+  <button class="btn" id="btnPrint">🖨 Print view</button>
+  <button class="btn" id="btnExport">⬇ Download run summary</button>
+  <span id="clock">--:--:--</span>
+</div>
+
+<div id="errBanner" role="alert">
+  <span>⚠ Something hiccuped, but your session is safe — click Reset to recover.</span>
+  <button id="btnErrReset">↺ Reset now</button>
+  <span id="errDetail" style="font-weight:400;font-size:12px"></span>
+</div>
+
+<div id="walkBar" role="status">
+  <span id="walkStep">1/7</span>
+  <span id="walkText"></span>
+  <button id="walkBack">◀ Back</button>
+  <button id="walkNext">Next ▶</button>
+  <button id="walkEnd">End</button>
+</div>
+
+<div id="demoCaption" role="status"></div>
+
+<div id="grid">
+  <!-- LEFT: patient state -->
+  <div>
+    <div class="panel">
+      <h2>Live vitals <span style="font-weight:500;text-transform:none;letter-spacing:0">(color + word coding · trend + dashed forecast)</span></h2>
+      <div id="vitals">
+        <div class="vital" id="card-hr">
+          <div class="name">Heart rate</div>
+          <div><span class="num" id="v-hr">--</span> <span class="unit">bpm</span></div>
+          <span class="status-word" id="s-hr">—</span>
+          <svg id="g-hr" viewBox="0 0 220 52" preserveAspectRatio="none" role="img" aria-label="Heart rate trend"></svg>
+          <div class="forecast-warn" id="f-hr"></div>
+          <div class="nudge">
+            <button data-nudge="hr" data-d="-5" aria-label="Decrease heart rate">−</button>
+            <button data-nudge="hr" data-d="5" aria-label="Increase heart rate">+</button>
+            <select class="conf" data-conf="hr" aria-label="Heart rate data confidence">
+              <option value="confirmed">Confirmed</option><option value="estimated">Estimated</option><option value="missing">Missing</option>
+            </select>
+          </div>
+        </div>
+        <div class="vital" id="card-spo2">
+          <div class="name">SpO₂</div>
+          <div><span class="num" id="v-spo2">--</span> <span class="unit">%</span></div>
+          <span class="status-word" id="s-spo2">—</span>
+          <svg id="g-spo2" viewBox="0 0 220 52" preserveAspectRatio="none" role="img" aria-label="SpO2 trend"></svg>
+          <div class="forecast-warn" id="f-spo2"></div>
+          <div class="nudge">
+            <button data-nudge="spo2" data-d="-1" aria-label="Decrease SpO2">−</button>
+            <button data-nudge="spo2" data-d="1" aria-label="Increase SpO2">+</button>
+            <select class="conf" data-conf="spo2" aria-label="SpO2 data confidence">
+              <option value="confirmed">Confirmed</option><option value="estimated">Estimated</option><option value="missing">Missing</option>
+            </select>
+          </div>
+        </div>
+        <div class="vital" id="card-bp">
+          <div class="name">Blood pressure</div>
+          <div><span class="num" id="v-bp">--/--</span> <span class="unit">mmHg</span></div>
+          <span class="status-word" id="s-bp">—</span>
+          <svg id="g-sys" viewBox="0 0 220 52" preserveAspectRatio="none" role="img" aria-label="Systolic blood pressure trend"></svg>
+          <div class="forecast-warn" id="f-sys"></div>
+          <div class="nudge">
+            <button data-nudge="sys" data-d="-5" aria-label="Decrease systolic BP">−</button>
+            <button data-nudge="sys" data-d="5" aria-label="Increase systolic BP">+</button>
+            <select class="conf" data-conf="sys" aria-label="Blood pressure data confidence">
+              <option value="confirmed">Confirmed</option><option value="estimated">Estimated</option><option value="missing">Missing</option>
+            </select>
+          </div>
+        </div>
+        <div class="vital" id="card-rr">
+          <div class="name">Respiration</div>
+          <div><span class="num" id="v-rr">--</span> <span class="unit">breaths/min</span></div>
+          <span class="status-word" id="s-rr">—</span>
+          <svg id="g-rr" viewBox="0 0 220 52" preserveAspectRatio="none" role="img" aria-label="Respiration rate trend"></svg>
+          <div class="forecast-warn" id="f-rr"></div>
+          <div class="nudge">
+            <button data-nudge="rr" data-d="-2" aria-label="Decrease respiration rate">−</button>
+            <button data-nudge="rr" data-d="2" aria-label="Increase respiration rate">+</button>
+            <select class="conf" data-conf="rr" aria-label="Respiration data confidence">
+              <option value="confirmed">Confirmed</option><option value="estimated">Estimated</option><option value="missing">Missing</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div id="sliderRow">
+        <label for="spo2Slider">Presenter control — SpO₂</label>
+        <input type="range" id="spo2Slider" min="60" max="100" value="98" step="1">
+        <span id="spo2SliderVal" style="font-family:var(--mono);font-weight:700">98%</span>
+      </div>
+
+      <div id="ivPanel">
+        <div class="ews-label" style="margin-bottom:6px">Crew interventions — the patient responds (simulated)</div>
+        <div class="iv-btns" id="ivBtns"></div>
+        <div class="iv-note">Two-way loop: the twin recommends → the crew acts → the patient responds → the twin recalculates.</div>
+      </div>
+
+      <div id="replayRow">
+        <label for="replaySlider">⏪ Replay</label>
+        <input type="range" id="replaySlider" min="0" max="0" value="0" step="1" aria-label="Replay timeline">
+        <span id="replayBadge">⏪ REPLAY</span>
+        <button class="btn" id="btnLive" style="padding:4px 10px;font-size:12px">Return to live</button>
+      </div>
+
+      <div id="fcCard">
+        <div>
+          <div class="ews-label">Forecast accuracy</div>
+          <span id="fcRate">—</span>
+        </div>
+        <div id="fcDetail" style="font-size:12.5px;color:var(--ink-soft)">The twin checks its own predictions: did the vital actually cross the threshold it warned about?</div>
+      </div>
+
+      <div id="shockCard">
+        <div>
+          <div class="ews-label">Shock index (derived)</div>
+          <span id="shockVal">0.00</span> <span id="shockFlag" class="status-word" style="background:#E2E9EE;color:var(--ink-soft)">Normal</span>
+        </div>
+        <div id="shockFormula">SI = HR ÷ systolic BP — flagged when &gt; 0.9 (compensated shock)</div>
+      </div>
+
+      <div id="compWrap">
+        <div class="ews-label" style="margin-bottom:4px">Data completeness</div>
+        <div id="compBarOuter"><div id="compBar"></div></div>
+        <div id="compText">100% confirmed — crews often act on partial information; the twin shows how solid its inputs are.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- RIGHT: twin outputs -->
+  <div>
+    <div class="panel" style="margin-bottom:16px">
+      <h2>Twin decisions — AI advises, the paramedic decides</h2>
+      <div class="decision" id="dec-responder">
+        <div class="d-head"><span class="d-title">Responder level</span><span class="protocol-tag">Per local EMS ALS-dispatch criteria (simulated)</span></div>
+        <div class="d-value" id="dv-responder">—</div>
+        <div class="d-reason" id="dr-responder"></div>
+        <div class="d-actions" id="da-responder"></div>
+      </div>
+      <div class="decision" id="dec-routing">
+        <div class="d-head"><span class="d-title">Hospital routing</span><span class="protocol-tag">Per CDC Field Triage Guidelines (simulated)</span></div>
+        <div class="d-value" id="dv-routing">—</div>
+        <div class="d-reason" id="dr-routing"></div>
+        <div class="d-actions" id="da-routing"></div>
+      </div>
+      <div class="decision" id="dec-priority">
+        <div class="d-head"><span class="d-title">Triage priority</span><span class="protocol-tag">Priority bands from adapted NEWS2 + local rules</span></div>
+        <div class="d-value" id="dv-priority">—</div>
+        <div class="d-reason" id="dr-priority"></div>
+        <div class="d-actions" id="da-priority"></div>
+      </div>
+      <div class="decision" id="dec-equipment">
+        <div class="d-head"><span class="d-title">Equipment needed</span><span class="protocol-tag">Rule-based — see inventory reasons</span></div>
+        <div class="d-value" id="dv-equipment" style="font-size:15px">—</div>
+        <div class="d-reason" id="dr-equipment"></div>
+        <div class="d-actions" id="da-equipment"></div>
+      </div>
+    </div>
+
+    <div class="panel" style="margin-bottom:16px">
+      <h2>Hospital destination board <span class="protocol-tag">simulated CAD feed</span></h2>
+      <div id="hospBoard"></div>
+    </div>
+
+    <div class="panel" id="rosterPanel" style="margin-bottom:16px">
+      <h2>Dispatch roster — active units (simulated)</h2>
+      <div id="rosterList"></div>
+    </div>
+
+    <div class="panel" style="margin-bottom:16px">
+      <h2>Ambulance inventory</h2>
+      <ul id="invList"></ul>
+    </div>
+
+    <div class="panel">
+      <h2>Event log <span style="font-weight:500;text-transform:none;letter-spacing:0">(newest first · includes crew accept/override audit trail)</span></h2>
+      <ul id="logList" role="log" aria-live="polite"></ul>
+    </div>
+  </div>
+</div>
+
+<footer>
+  Educational prototype for ITAI 4371 (Digital Twins &amp; Virtual Simulation). Real deployments would use live medical-device feeds,
+  HL7/FHIR data standards, and HIPAA-grade security — represented here in simulated, illustrative form only.
+</footer>
+
+<!-- Help modal -->
+<div id="helpModal" role="dialog" aria-modal="true" aria-label="How to read this app">
+  <div id="helpBox">
+    <button class="close-x" id="helpClose">✕ Close</button>
+    <h3>How to read this app (10-second guide)</h3>
+    <ul>
+      <li><b>Colors:</b> green = normal, amber = borderline, red = dangerous. Every color also has a word (✔ ⚠ ⛔) so it works for color-blind viewers.</li>
+      <li><b>Early-warning score:</b> one number (adapted NEWS2) that combines HR, SpO₂, respiration and blood pressure. ≤4 Low, 5–6 Medium, ≥7 High.</li>
+      <li><b>Four decisions:</b> the twin recommends equipment, responder level (BLS vs ALS), hospital routing, and triage priority — each with a plain "Why" tied to the inputs.</li>
+      <li><b>Shock index:</b> HR ÷ systolic BP. Above 0.9 suggests the body is compensating for shock.</li>
+      <li><b>Solid vs dashed lines:</b> solid = recorded vitals; dashed = where the trend is heading (the forecast).</li>
+      <li><b>Interventions:</b> click "Give oxygen," "IV fluids," etc. and the patient responds — the twin then recalculates. AI advises; the crew decides.</li>
+      <li><b>Accept / Override:</b> every recommendation can be accepted or overridden, and every action is written to the audit log.</li>
+      <li><b>Replay slider:</b> rewind the whole run for a debrief; "Return to live" jumps back.</li>
+    </ul>
+    <p style="font-size:12px;color:var(--ink-soft)">Educational prototype — all data simulated. Not for real clinical use.</p>
+  </div>
+</div>
+
+<!-- Print-only one-page summary -->
+<div id="printArea"></div>
+
+<script>
+/* =====================================================================
+   DECISION RULES, THRESHOLDS, SCORING TABLES & PROTOCOL LABELS
+   ---------------------------------------------------------------------
+   EVERYTHING the twin uses to decide lives in this one CONFIG block.
+   Edit numbers/labels here — no need to touch the logic below.
+   ===================================================================== */
+const CONFIG = {
+
+  /* Color / status thresholds for each vital (green=good, amber=warn, red=crit) */
+  thresholds: {
+    spo2: { red: 90, amber: 92 },                          // SpO2 <90 red, <92 amber
+    hr:   { redHigh: 120, amberHigh: 100, amberLow: 50, redLow: 40 },
+    sys:  { red: 90, amber: 100 },                         // systolic BP
+    rr:   { redHigh: 25, amberHigh: 21, amberLow: 11, redLow: 8 }
+  },
+
+  /* Derived metric */
+  shockIndexFlag: 0.9,        // SI = HR / systolic; > 0.9 flagged
+
+  /* Adapted NEWS2 scoring (4 of the 7 official parameters — simulated/educational).
+     Each table: [upperBound, points] rows checked in order (value <= upperBound). */
+  news2: {
+    rr:   [[8,3],[11,1],[20,0],[24,2],[Infinity,3]],
+    spo2: [[91,3],[93,2],[95,1],[Infinity,0]],
+    sys:  [[90,3],[100,2],[110,1],[219,0],[Infinity,3]],
+    hr:   [[40,3],[50,1],[90,0],[110,1],[130,2],[Infinity,3]],
+    bands: { lowMax: 4, mediumMax: 6 }   // <=4 Low, 5-6 Medium, >=7 High
+  },
+
+  /* Protocol attribution labels (plain editable text) */
+  protocols: {
+    ews:      "Early-warning: NEWS2 (adapted — 4 of 7 parameters, simulated)",
+    routing:  "Routing: per CDC Field Triage Guidelines (simulated)",
+    responder:"Responder level: local EMS ALS-dispatch criteria (simulated)",
+    priority: "Priority: adapted NEWS2 bands + local rules (simulated)"
+  },
+
+  /* Patient scenarios: starting vitals + injury mechanism */
+  scenarios: {
+    stable:  { label:"Stable routine transport",   mechanism:"routine",     vitals:{ hr:78,  spo2:98, sys:118, dia:76, rr:14 } },
+    cardiac: { label:"Suspected cardiac event",    mechanism:"cardiac",     vitals:{ hr:132, spo2:91, sys:88,  dia:54, rr:22 } },
+    trauma:  { label:"Trauma / vehicle collision", mechanism:"trauma",      vitals:{ hr:118, spo2:94, sys:100, dia:68, rr:20 } },
+    resp:    { label:"Respiratory distress",       mechanism:"respiratory", vitals:{ hr:105, spo2:87, sys:128, dia:82, rr:26 } }
+  },
+
+  /* Per-second drift applied while "transport" runs (≈18 s), + small jitter */
+  drift: {
+    routine:     { hr: 0.05, spo2: 0.0,   sys: -0.05, rr: 0.0  },
+    cardiac:     { hr: 0.9,  spo2: -0.25, sys: -1.3,  rr: 0.15 },
+    trauma:      { hr: 0.7,  spo2: -0.15, sys: -1.5,  rr: 0.10 },
+    respiratory: { hr: 0.5,  spo2: -0.45, sys:  0.2,  rr: 0.30 }
+  },
+  transportSeconds: 18,
+
+  /* Trend forecast: fit slope over last N points, project H ticks ahead (dashed) */
+  forecast: { lookback: 6, horizon: 12 },
+
+  /* Crew interventions (Prompt 4): per-second effect while active, with safety caps.
+     duration = seconds the effect ramps. All values editable. */
+  interventions: {
+    oxygen: { label:"Give oxygen",           effects:{ spo2:+0.7 },            caps:{ spo2:99 },  duration:12, note:"raises SpO₂ while flowing" },
+    fluids: { label:"IV fluids",             effects:{ sys:+1.4, hr:-0.5 },    caps:{ sys:125 },  duration:12, note:"restores blood pressure, eases heart rate" },
+    epi:    { label:"Epinephrine",           effects:{ sys:+2.2, hr:+1.2 },    caps:{ sys:130 },  duration:8,  note:"rapid pressure support; raises HR", consumes:"epi" },
+    vent:   { label:"Assisted ventilation",  effects:{ spo2:+0.9, rr:-0.6 },   caps:{ spo2:99 },  duration:12, note:"supports breathing, settles respiration" }
+  },
+
+  /* Hospital destination board (Prompt 4) — simulated CAD statuses */
+  hospitals: [
+    { id:"trauma1",  name:"Memorial Trauma Center",     type:"Trauma center",  etaMin:9,  status:"open" },
+    { id:"cardiac1", name:"St. Vincent Cardiac Center", type:"Cardiac center", etaMin:12, status:"open" },
+    { id:"stroke1",  name:"Riverside Stroke Center",    type:"Stroke center",  etaMin:14, status:"open" },
+    { id:"er1",      name:"County General ER",          type:"General ER",     etaMin:6,  status:"open" },
+    { id:"er2",      name:"Eastside General ER",        type:"General ER",     etaMin:11, status:"busy" }
+  ],
+
+  /* Other active units for the dispatch roster (simulated, static) */
+  roster: [
+    { unit:"Medic 7",  patient:"Fall injury, 67M",      ews:3, band:"Low"    },
+    { unit:"Medic 21", patient:"Chest pain, 58F",       ews:6, band:"Medium" },
+    { unit:"Medic 4",  patient:"Routine transfer, 45M", ews:1, band:"Low"    }
+  ],
+
+  /* Alternatives offered when the crew overrides a recommendation */
+  overrideOptions: {
+    responder: ["BLS", "ALS / Paramedic"],
+    routing:   ["Trauma center", "Cardiac center", "Stroke center", "General ER"],
+    priority:  ["Low", "High", "Critical"]
+  },
+
+  /* Simulated connectivity: monitor drop-outs and hospital diversion events (seconds) */
+  connection: { dropEveryMin: 22, dropEveryMax: 38, outageSeconds: 5 },
+  diversion:  { everyMin: 26, everyMax: 44, outageSeconds: 12 }
+};
+/* ============ END OF EDITABLE CONFIG ============ */
+
+
+/* ---------- state ---------- */
+const $ = id => document.getElementById(id);
+const HOSP_DEFAULTS = CONFIG.hospitals.map(h => h.status);
+let state = {
+  scenarioKey: "stable",
+  vitals: { ...CONFIG.scenarios.stable.vitals },
+  history: [],                 // frames: [{t, hr, spo2, sys, dia, rr}]
+  confidence: { hr:"confirmed", spo2:"confirmed", sys:"confirmed", rr:"confirmed" },
+  overrides: {}, accepted: {},
+  lastOutputs: null, lastStatuses: {}, warned: {},
+  transportTimer: null, transportTicks: 0,
+  demoTimers: [], demoRunning: false,
+  nextDropAt: 0, monitorDown: false,
+  nextDivAt: 0, divHospital: null,
+  elapsed: 0,
+  activeIv: {},                // interventions: key -> remaining seconds
+  predictions: [], fcHits: 0, fcTotal: 0,
+  replayMode: false,
+  lastRoutedId: null,
+  walkIdx: -1,
+  boardSig: "", rosterSig: "", invSig: "", ivSig: "",
+  logText: []
+};
+
+const VKEYS = ["hr","spo2","sys","rr"];
+const VMETA = {
+  hr:  { label:"Heart rate",  unit:"bpm",  range:[40,170], min:30,  max:200 },
+  spo2:{ label:"SpO₂",        unit:"%",    range:[70,100], min:60,  max:100 },
+  sys: { label:"Systolic BP", unit:"mmHg", range:[60,160], min:50,  max:220 },
+  rr:  { label:"Respiration", unit:"/min", range:[5,40],   min:4,   max:60  }
+};
+
+/* ---------- error guard (Prompt 5: un-breakable demo) ---------- */
+function showError(e){
+  console.error(e);
+  $("errBanner").className = "on";
+  $("errDetail").textContent = "(" + (e && e.message ? e.message : e) + ")";
+}
+function guard(fn){
+  return function(...args){
+    try { return fn.apply(this, args); }
+    catch(e){ showError(e); }
+  };
+}
+
+/* ---------- helpers ---------- */
+function now(){ const d=new Date(); return d.toTimeString().slice(0,8); }
+function clamp(v,lo,hi){ return Math.max(lo,Math.min(hi,v)); }
+function scoreFromTable(tbl,v){ for(const [max,pts] of tbl){ if(v<=max) return pts; } return 0; }
+
+function vitalStatus(key,v){
+  const t = CONFIG.thresholds;
+  if(key==="spo2") return v< t.spo2.red ? "crit" : v< t.spo2.amber ? "warn" : "good";
+  if(key==="sys")  return v< t.sys.red  ? "crit" : v< t.sys.amber  ? "warn" : "good";
+  if(key==="hr"){
+    if(v> t.hr.redHigh || v< t.hr.redLow) return "crit";
+    if(v> t.hr.amberHigh || v< t.hr.amberLow) return "warn";
+    return "good";
+  }
+  if(key==="rr"){
+    if(v>=t.rr.redHigh || v<=t.rr.redLow) return "crit";
+    if(v>=t.rr.amberHigh || v<=t.rr.amberLow) return "warn";
+    return "good";
+  }
+  return "good";
+}
+const STATUS_WORD = { good:"✔ Normal", warn:"⚠ Borderline", crit:"⛔ Dangerous" };
+
+/* ---------- event log ---------- */
+function log(msg, kind){
+  const li = document.createElement("li");
+  if(kind) li.className = kind;
+  li.innerHTML = `<span class="t">${now()}</span><span class="msg">${msg}</span>`;
+  const list = $("logList");
+  list.insertBefore(li, list.firstChild);
+  while(list.children.length > 250) list.removeChild(list.lastChild);
+  state.logText.unshift(`${now()}  ${li.textContent.slice(8).trim()}`);
+  if(state.logText.length > 300) state.logText.pop();
+}
+
+/* ---------- core recalculation: the "twin" ---------- */
+function computeOutputs(vitals){
+  const v = vitals || state.vitals;
+  const m = CONFIG.scenarios[state.scenarioKey].mechanism;
+  const si = v.sys > 0 ? v.hr / v.sys : 0;
+
+  /* adapted NEWS2 */
+  const parts = {
+    hr:   scoreFromTable(CONFIG.news2.hr, v.hr),
+    spo2: scoreFromTable(CONFIG.news2.spo2, v.spo2),
+    rr:   scoreFromTable(CONFIG.news2.rr, v.rr),
+    sys:  scoreFromTable(CONFIG.news2.sys, v.sys)
+  };
+  const news = parts.hr + parts.spo2 + parts.rr + parts.sys;
+  const band = news <= CONFIG.news2.bands.lowMax ? "Low" : news <= CONFIG.news2.bands.mediumMax ? "Medium" : "High";
+
+  const statuses = {};
+  let redCount = 0, amberCount = 0;
+  VKEYS.forEach(k => {
+    statuses[k] = vitalStatus(k, v[k]);
+    if(statuses[k]==="crit") redCount++;
+    if(statuses[k]==="warn") amberCount++;
+  });
+
+  /* equipment */
+  const needed = [];
+  CONFIG.inventoryRuntime.forEach(item => {
+    const reason = item.rule(v, m, si);
+    if(reason) needed.push({ id:item.id, name:item.name, reason });
+  });
+
+  /* responder level */
+  let responder = "BLS", respReasons = [];
+  if(news >= 5) respReasons.push(`early-warning score ${news} ≥ 5`);
+  if(redCount >= 1) respReasons.push(`${redCount} vital(s) in the red zone`);
+  if(si > CONFIG.shockIndexFlag) respReasons.push(`shock index ${si.toFixed(2)} &gt; ${CONFIG.shockIndexFlag}`);
+  if(respReasons.length){ responder = "ALS / Paramedic"; }
+  else respReasons.push("all vitals within safe bands — basic life support sufficient");
+
+  /* hospital routing (type — the board picks the facility) */
+  let routing, routeReason;
+  if(m === "trauma"){
+    routing = "Trauma center";
+    routeReason = "vehicle-collision mechanism" + (si > 0.9 || v.sys < 90 ? ` with shock signs (SI ${si.toFixed(2)}, BP ${Math.round(v.sys)})` : " — mechanism criteria");
+  } else if(m === "cardiac" || (v.hr > 125 && v.sys < 92)){
+    routing = "Cardiac center";
+    routeReason = m === "cardiac" ? "suspected cardiac event — PCI-capable facility" : `cardiac-shock pattern (HR ${Math.round(v.hr)}, BP ${Math.round(v.sys)})`;
+  } else if(m === "respiratory" && band === "High"){
+    routing = "General ER";
+    routeReason = "severe respiratory case — nearest ER with respiratory support";
+  } else {
+    routing = "General ER";
+    routeReason = "no specialty-center criteria met";
+  }
+
+  /* triage priority */
+  let priority, priReason;
+  if(news >= 7 || redCount >= 2 || v.spo2 < 90 || v.sys < 88){
+    priority = "Critical";
+    priReason = [];
+    if(news >= 7) priReason.push(`EWS ${news} ≥ 7`);
+    if(redCount >= 2) priReason.push(`${redCount} red vitals`);
+    if(v.spo2 < 90) priReason.push(`SpO₂ ${Math.round(v.spo2)}% &lt; 90%`);
+    if(v.sys < 88) priReason.push(`systolic ${Math.round(v.sys)} &lt; 88`);
+    priReason = priReason.join(" · ");
+  } else if(news >= 5 || redCount >= 1 || amberCount >= 2 || si > CONFIG.shockIndexFlag){
+    priority = "High";
+    priReason = news >= 5 ? `EWS ${news} in the 5–6 band` : redCount ? "a vital is in the red zone" : si > CONFIG.shockIndexFlag ? `shock index ${si.toFixed(2)} elevated` : "multiple borderline vitals";
+  } else {
+    priority = "Low";
+    priReason = `EWS ${news} ≤ ${CONFIG.news2.bands.lowMax}, no red vitals`;
+  }
+
+  return { si, news, newsParts: parts, band, statuses, needed, responder, respReasons, routing, routeReason, priority, priReason, redCount, amberCount };
+}
+
+/* Inventory rules kept editable in CONFIG style but defined here so stock can change (epi use) */
+CONFIG.inventoryRuntime = [
+  { id:"defib",  name:"Defibrillator / AED",  stock:1,
+    rule:(v,m)=> (m==="cardiac" || v.hr>=130) ? `cardiac pattern (HR ${Math.round(v.hr)}${m==="cardiac"?", suspected cardiac event":""})` : null },
+  { id:"oxygen", name:"Oxygen tank",          stock:2,
+    rule:(v)=> v.spo2<92 ? `SpO₂ ${Math.round(v.spo2)}% &lt; 92%` : null },
+  { id:"iv",     name:"IV kit",               stock:4,
+    rule:(v)=> v.sys<100 ? `systolic BP ${Math.round(v.sys)} &lt; 100 — volume support` : null },
+  { id:"dress",  name:"Trauma dressing kit",  stock:3,
+    rule:(v,m)=> m==="trauma" ? "vehicle collision — bleeding control" : null },
+  { id:"collar", name:"Cervical collar",      stock:2,
+    rule:(v,m)=> m==="trauma" ? "collision mechanism — spinal precaution" : null },
+  { id:"epi",    name:"Epinephrine",          stock:6,
+    rule:(v,m,si)=> (v.sys<85 && v.hr>125) ? `severe shock pattern (BP ${Math.round(v.sys)}, HR ${Math.round(v.hr)})` : null },
+  { id:"neb",    name:"Nebulizer",            stock:2,
+    rule:(v,m)=> (m==="respiratory" && v.spo2<94) ? `respiratory distress with SpO₂ ${Math.round(v.spo2)}%` : null },
+  { id:"cuff",   name:"BP cuff",              stock:2,
+    rule:()=> "continuous monitoring on every transport" },
+  { id:"stretch",name:"Stretcher",            stock:1,
+    rule:()=> "patient movement on every transport" },
+  { id:"splint", name:"Splints",              stock:4,
+    rule:(v,m)=> m==="trauma" ? "collision mechanism — possible fractures" : null }
+];
+const EPI_STOCK_DEFAULT = 6;
+
+/* ---------- hospital routing (Prompt 4) ---------- */
+function pickHospital(type){
+  const candidates = CONFIG.hospitals.filter(h => h.type === type);
+  const open = candidates.filter(h => h.status === "open").sort((a,b)=>a.etaMin-b.etaMin);
+  const busy = candidates.filter(h => h.status === "busy").sort((a,b)=>a.etaMin-b.etaMin);
+  let pick = open[0] || busy[0] || null, rerouted = false;
+  if(!pick){
+    const er = CONFIG.hospitals.filter(h => h.type === "General ER" && h.status !== "diversion")
+                               .sort((a,b)=>a.etaMin-b.etaMin);
+    pick = er[0] || null;
+    rerouted = true;
+  }
+  return { pick, rerouted };
+}
+
+/* ---------- rendering ---------- */
+function bumpIfChanged(el, newText){
+  if(el.textContent !== newText){
+    el.textContent = newText;
+    el.classList.remove("bump");
+    void el.offsetWidth; /* restart animation */
+    el.classList.add("bump");
+  }
+}
+function renderVitals(out, v){
+  v = v || state.vitals;
+  bumpIfChanged($("v-hr"),   String(Math.round(v.hr)));
+  bumpIfChanged($("v-spo2"), String(Math.round(v.spo2)));
+  bumpIfChanged($("v-bp"),   Math.round(v.sys) + "/" + Math.round(v.dia));
+  bumpIfChanged($("v-rr"),   String(Math.round(v.rr)));
+
+  const cardMap = { hr:"card-hr", spo2:"card-spo2", sys:"card-bp", rr:"card-rr" };
+  VKEYS.forEach(k=>{
+    const st = out.statuses[k];
+    $(cardMap[k]).className = "vital " + st;
+    $("s-"+(k==="sys"?"bp":k)).textContent = STATUS_WORD[st];
+  });
+
+  $("spo2Slider").value = Math.round(v.spo2);
+  $("spo2SliderVal").textContent = Math.round(v.spo2) + "%";
+
+  /* shock index */
+  $("shockVal").textContent = out.si.toFixed(2);
+  const flagged = out.si > CONFIG.shockIndexFlag;
+  $("shockCard").classList.toggle("flag", flagged);
+  const sf = $("shockFlag");
+  sf.textContent = flagged ? "⚠ Flagged — possible shock" : "✔ Normal";
+  sf.style.background = flagged ? "var(--crit)" : "#E2E9EE";
+  sf.style.color = flagged ? "#fff" : "var(--ink-soft)";
+  $("shockFormula").innerHTML = `SI = HR ${Math.round(v.hr)} ÷ sys ${Math.round(v.sys)} = <b>${out.si.toFixed(2)}</b> — flagged when &gt; ${CONFIG.shockIndexFlag}`;
+
+  /* EWS banner */
+  $("ewsScore").textContent = out.news;
+  $("ewsBanner").className = out.band.toLowerCase();
+  $("ewsBand").textContent = (out.band==="Low"?"✔ LOW RISK":out.band==="Medium"?"⚠ MEDIUM RISK":"⛔ HIGH RISK");
+  $("ewsBreakdown").textContent = `HR ${out.newsParts.hr} + SpO₂ ${out.newsParts.spo2} + RR ${out.newsParts.rr} + Sys BP ${out.newsParts.sys} = ${out.news}`;
+  $("ewsProtocol").textContent = CONFIG.protocols.ews;
+}
+
+function trendSVG(key, frames){
+  const meta = VMETA[key];
+  const pts = frames.slice(-40).map(h => h[key]);
+  const W=220, H=52, [lo,hi]=meta.range;
+  const y = val => H-4 - clamp((val-lo)/(hi-lo),0,1)*(H-8);
+  if(pts.length < 2){ return `<line x1="0" y1="${H/2}" x2="${W}" y2="${H/2}" stroke="var(--line)" stroke-width="1"/>`; }
+  const step = W*0.72/(Math.max(pts.length-1,1));
+  const path = pts.map((p,i)=>`${(i*step).toFixed(1)},${y(p).toFixed(1)}`).join(" ");
+  let fc = "";
+  const lb = CONFIG.forecast.lookback;
+  if(pts.length >= 3){
+    const seg = pts.slice(-Math.min(lb,pts.length));
+    const slope = (seg[seg.length-1]-seg[0])/(seg.length-1);
+    const lastX = (pts.length-1)*step, lastV = pts[pts.length-1];
+    const fpts = [];
+    for(let i=1;i<=CONFIG.forecast.horizon;i++){
+      fpts.push(`${(lastX+i*step).toFixed(1)},${y(clamp(lastV+slope*i, meta.min, meta.max)).toFixed(1)}`);
+    }
+    fc = `<polyline points="${lastX.toFixed(1)},${y(lastV).toFixed(1)} ${fpts.join(" ")}" fill="none" stroke="var(--ink-soft)" stroke-width="1.6" stroke-dasharray="4 3"/>`;
+  }
+  return `<polyline points="${path}" fill="none" stroke="var(--accent)" stroke-width="2"/>${fc}`;
+}
+
+/* returns {msg, target, rising} or null */
+function forecastWarning(key){
+  const pts = state.history.slice(-40).map(h=>h[key]);
+  if(pts.length < 4) return null;
+  const seg = pts.slice(-CONFIG.forecast.lookback);
+  const slope = (seg[seg.length-1]-seg[0])/(seg.length-1);
+  const last = pts[pts.length-1];
+  const H = CONFIG.forecast.horizon;
+  const t = CONFIG.thresholds;
+  function eta(target, falling){
+    if(falling ? (slope>=-0.01||last<=target) : (slope<=0.01||last>=target)) return null;
+    const n = (target-last)/slope;
+    return (n>0 && n<=H) ? Math.ceil(n) : null;
+  }
+  if(key==="spo2"){ const n = eta(90,true); if(n) return {msg:`SpO₂ trending toward 90% in ~${n}s`, target:90, rising:false}; }
+  if(key==="sys"){ const n = eta(t.sys.red,true); if(n) return {msg:`Systolic trending toward ${t.sys.red} in ~${n}s`, target:t.sys.red, rising:false}; }
+  if(key==="hr"){ const n = eta(t.hr.redHigh,false); if(n) return {msg:`HR trending past ${t.hr.redHigh} in ~${n}s`, target:t.hr.redHigh, rising:true}; }
+  if(key==="rr"){ const n = eta(t.rr.redHigh,false); if(n) return {msg:`Respiration trending past ${t.rr.redHigh} in ~${n}s`, target:t.rr.redHigh, rising:true}; }
+  return null;
+}
+
+function renderTrends(frames, live){
+  const svgMap = { hr:"g-hr", spo2:"g-spo2", sys:"g-sys", rr:"g-rr" };
+  const fMap   = { hr:"f-hr", spo2:"f-spo2", sys:"f-sys", rr:"f-rr" };
+  VKEYS.forEach(k=>{
+    $(svgMap[k]).innerHTML = trendSVG(k, frames);
+    if(!live){ $(fMap[k]).textContent = ""; return; }
+    const w = forecastWarning(k);
+    $(fMap[k]).textContent = w ? w.msg : "";
+    if(w && !state.warned[k]){
+      log("Forecast: " + w.msg, "warn");
+      state.warned[k] = true;
+      /* record prediction for the accuracy scorecard (Prompt 4) */
+      state.predictions.push({ key:k, target:w.target, rising:w.rising, idx:state.history.length-1, horizon:CONFIG.forecast.horizon, done:false });
+    }
+    if(!w) state.warned[k]=false;
+  });
+}
+
+/* forecast accuracy scorecard (Prompt 4) */
+function checkPredictions(){
+  const h = state.history;
+  state.predictions.forEach(p=>{
+    if(p.done) return;
+    const latest = h[h.length-1][p.key];
+    const crossed = p.rising ? latest >= p.target : latest <= p.target;
+    if(crossed){
+      p.done = true; state.fcHits++; state.fcTotal++;
+      log(`Forecast verified ✔ — ${VMETA[p.key].label} did cross ${p.target} as predicted.`, "ok");
+    } else if(h.length-1 - p.idx > p.horizon + 3){
+      p.done = true; state.fcTotal++;
+      log(`Forecast expired — ${VMETA[p.key].label} did not cross ${p.target} in time (logged as miss).`, "warn");
+    }
+  });
+  renderFc();
+}
+function renderFc(){
+  $("fcRate").textContent = state.fcTotal ? `${state.fcHits}/${state.fcTotal} (${Math.round(state.fcHits/state.fcTotal*100)}%)` : "—";
+}
+
+function renderInventory(out){
+  const neededIds = Object.fromEntries(out.needed.map(n=>[n.id,n.reason]));
+  const sig = CONFIG.inventoryRuntime.map(i=>i.id+":"+i.stock+":"+(neededIds[i.id]||"")).join("|");
+  if(sig === state.invSig) return;   /* flicker prevention */
+  state.invSig = sig;
+  $("invList").innerHTML = CONFIG.inventoryRuntime.map(item=>{
+    const r = neededIds[item.id];
+    return `<li>
+      <span class="inv-name">${item.name}</span>
+      <span class="inv-stock">stock ×${item.stock}</span>
+      <span class="inv-tag ${r?"needed":"standby"}">${r?"⛑ Needed now":"Standby"}</span>
+      ${r?`<span class="inv-reason">↳ flagged because ${r}</span>`:""}
+    </li>`;
+  }).join("");
+}
+
+const DECISION_KEYS = ["responder","routing","priority","equipment"];
+function decisionValue(out,key){
+  if(key==="responder") return out.responder;
+  if(key==="routing") return out.routing;
+  if(key==="priority") return out.priority;
+  return out.needed.map(n=>n.name).join(", ") || "None";
+}
+function renderDecisions(out, routeInfo){
+  const valueClass = { Critical:"crit-text", High:"warn-text", Low:"good-text", "ALS / Paramedic":"warn-text", BLS:"good-text" };
+  const reasons = {
+    responder: out.respReasons.join(" · "),
+    routing: out.routeReason + (routeInfo && routeInfo.rerouted ? " — <b>preferred facility on diversion, rerouted</b>" : ""),
+    priority: out.priReason,
+    equipment: `${out.needed.length} item(s) flagged — reasons shown in the inventory list`
+  };
+  DECISION_KEYS.forEach(key=>{
+    const da = $("da-"+key);
+    /* if the crew has an override dropdown open, don't wipe it on the next live tick */
+    if(da.querySelector(".ovr-select")) return;
+    let recommended = decisionValue(out,key);
+    if(key==="routing" && routeInfo && routeInfo.pick){
+      recommended = decisionValue(out,key);
+    }
+    const ovr = state.overrides[key];
+    const dv = $("dv-"+key);
+    dv.className = "d-value " + (valueClass[recommended]||"");
+    let display = ovr ? ovr.value : recommended;
+    if(key==="routing" && routeInfo && routeInfo.pick){
+      display += ` <span style="font-size:13px;font-weight:600;color:var(--ink-soft)">→ ${routeInfo.pick.name} (${routeInfo.pick.etaMin} min)</span>`;
+    }
+    dv.innerHTML = ovr
+      ? `${display} <span style="font-size:12px;color:var(--ink-soft);font-weight:500">(twin recommends: ${recommended})</span>`
+      : display;
+    $("dr-"+key).innerHTML = "Why: " + reasons[key];
+
+    da.innerHTML = "";
+    if(state.replayMode){
+      da.innerHTML = `<span class="ovr-badge" style="background:var(--ink-soft)">⏪ REPLAY — controls paused</span>`;
+      return;
+    }
+    if(ovr){
+      da.innerHTML = `<span class="ovr-badge">CREW OVERRIDE</span>`;
+      const clr = document.createElement("button");
+      clr.textContent = "Clear override";
+      clr.onclick = guard(()=>{ delete state.overrides[key]; log(`Crew cleared override on ${key} — following twin recommendation again`, "ok"); recalc(); });
+      da.appendChild(clr);
+    } else {
+      if(state.accepted[key]) da.innerHTML = `<span class="acc-badge">✔ ACCEPTED BY CREW</span>`;
+      const acc = document.createElement("button");
+      acc.className="accept"; acc.textContent="Accept";
+      acc.onclick = guard(()=>{ state.accepted[key]=true; log(`Crew ACCEPTED twin recommendation — ${key}: ${decisionValue(out,key)}`, "ok"); recalc(); });
+      da.appendChild(acc);
+      const ovb = document.createElement("button");
+      ovb.className="override"; ovb.textContent="Override…";
+      ovb.onclick = guard(()=>{
+        if(key==="equipment"){
+          state.overrides[key] = { value:"Crew manual equipment selection" };
+          log(`Crew OVERRODE equipment recommendation — using crew judgment (twin suggested: ${decisionValue(out,key)})`, "warn");
+          recalc(); return;
+        }
+        const sel = document.createElement("select");
+        sel.className="ovr-select";
+        sel.innerHTML = `<option value="">choose…</option>` + CONFIG.overrideOptions[key].filter(o=>o!==decisionValue(out,key)).map(o=>`<option>${o}</option>`).join("");
+        sel.onchange = guard(()=>{
+          if(!sel.value) return;
+          state.overrides[key] = { value: sel.value };
+          log(`Crew OVERRODE ${key}: chose "${sel.value}" instead of twin recommendation "${decisionValue(out,key)}"`, "warn");
+          sel.remove();   /* choice made — allow this decision to re-render */
+          recalc();
+        });
+        da.appendChild(sel);
+        sel.focus();
+      });
+      da.appendChild(ovb);
+    }
+  });
+}
+
+function renderBoard(routeInfo){
+  const routedId = routeInfo && routeInfo.pick ? routeInfo.pick.id : null;
+  const sig = CONFIG.hospitals.map(h=>h.id+":"+h.status).join("|") + "#" + routedId;
+  if(sig === state.boardSig) return;   /* flicker prevention */
+  state.boardSig = sig;
+  $("hospBoard").innerHTML = CONFIG.hospitals.map(h=>`
+    <div class="hosp">
+      <span class="h-name">${h.name}</span>
+      <span class="h-type">${h.type}</span>
+      <span class="h-eta">ETA ${h.etaMin} min</span>
+      <span class="h-status ${h.status}">${h.status==="open"?"✔ Open":h.status==="busy"?"⚠ Busy":"⛔ On diversion"}</span>
+      ${h.id===routedId?'<span class="h-routed">← routed here</span>':""}
+    </div>`).join("");
+}
+
+function renderRoster(out){
+  const mine = { unit:"Medic 12", patient: CONFIG.scenarios[state.scenarioKey].label + " (this patient)", ews: out.news, band: out.band, me:true };
+  const rows = [mine, ...CONFIG.roster].sort((a,b)=>b.ews-a.ews);
+  const sig = rows.map(r=>r.unit+":"+r.ews).join("|");
+  if(sig === state.rosterSig) return;
+  state.rosterSig = sig;
+  $("rosterList").innerHTML = rows.map(r=>`
+    <div class="ros ${r.me?"me":""}">
+      <span class="r-unit">${r.unit}</span>
+      <span class="r-pat">${r.patient}</span>
+      <span class="r-ews">EWS ${r.ews}</span>
+      <span class="r-band ${r.band}">${r.band}</span>
+    </div>`).join("");
+}
+
+function renderCompleteness(){
+  const w = { confirmed:1, estimated:0.5, missing:0 };
+  const keys = Object.keys(state.confidence);
+  const pct = Math.round(keys.reduce((s,k)=>s+w[state.confidence[k]],0)/keys.length*100);
+  $("compBar").style.width = pct + "%";
+  $("compBar").style.background = pct>=75 ? "var(--accent)" : pct>=50 ? "var(--warn)" : "var(--crit)";
+  const notes = keys.filter(k=>state.confidence[k]!=="confirmed").map(k=>`${VMETA[k].label}: ${state.confidence[k]}`);
+  $("compText").textContent = pct + "% data confidence" + (notes.length ? " — " + notes.join(", ") : " — all inputs confirmed");
+}
+
+function renderInterventions(){
+  const sig = JSON.stringify(state.activeIv) + (state.replayMode ? "R" : "");
+  if(sig === state.ivSig) return;   /* flicker prevention */
+  state.ivSig = sig;
+  const box = $("ivBtns");
+  box.innerHTML = "";
+  Object.entries(CONFIG.interventions).forEach(([key,iv])=>{
+    const b = document.createElement("button");
+    b.className = "iv-btn" + (state.activeIv[key] ? " active" : "");
+    b.textContent = (state.activeIv[key] ? `⏱ ${iv.label} (${state.activeIv[key]}s)` : iv.label);
+    b.title = iv.note;
+    b.disabled = state.replayMode;
+    b.onclick = guard(()=> startIntervention(key));
+    box.appendChild(b);
+  });
+}
+
+/* ---------- diff & log meaningful changes ---------- */
+function diffAndLog(out, routeInfo){
+  const prev = state.lastOutputs;
+  VKEYS.forEach(k=>{
+    const was = state.lastStatuses[k], is = out.statuses[k];
+    if(was && was !== is){
+      const dir = ("good warn crit".indexOf(is) > "good warn crit".indexOf(was)) ? "worsened" : "improved";
+      log(`${VMETA[k].label} ${dir}: now ${Math.round(state.vitals[k])} ${VMETA[k].unit} (${STATUS_WORD[is].replace(/[✔⚠⛔] /,"")})`, is==="crit"?"crit":is==="warn"?"warn":"ok");
+    }
+    state.lastStatuses[k] = is;
+  });
+  if(prev){
+    if(prev.priority !== out.priority)
+      log(`Triage priority ${prev.priority} → <b>${out.priority}</b> (${out.priReason})`, out.priority==="Critical"?"crit":"warn");
+    if(prev.responder !== out.responder)
+      log(`Responder level ${prev.responder} → <b>${out.responder}</b>`, out.responder==="BLS"?"ok":"warn");
+    if(prev.routing !== out.routing)
+      log(`Hospital routing ${prev.routing} → <b>${out.routing}</b> (${out.routeReason})`, "warn");
+    if(prev.band !== out.band)
+      log(`Early-warning band ${prev.band} → <b>${out.band}</b> (score ${out.news})`, out.band==="High"?"crit":out.band==="Low"?"ok":"warn");
+    const prevIds = new Set(prev.needed.map(n=>n.id)), curIds = new Set(out.needed.map(n=>n.id));
+    out.needed.forEach(n=>{ if(!prevIds.has(n.id)) log(`Equipment escalated: <b>${n.name}</b> → Needed now (${n.reason})`, "warn"); });
+    prev.needed.forEach(n=>{ if(!curIds.has(n.id)) log(`Equipment stood down: ${n.name} → Standby`, "ok"); });
+    if((prev.si > CONFIG.shockIndexFlag) !== (out.si > CONFIG.shockIndexFlag))
+      log(out.si > CONFIG.shockIndexFlag ? `Shock index flagged: ${out.si.toFixed(2)} &gt; ${CONFIG.shockIndexFlag}` : `Shock index back to normal: ${out.si.toFixed(2)}`, out.si>CONFIG.shockIndexFlag?"crit":"ok");
+  }
+  /* hospital reroute audit (Prompt 4) */
+  const routedId = routeInfo && routeInfo.pick ? routeInfo.pick.id : null;
+  if(state.lastRoutedId && routedId && state.lastRoutedId !== routedId){
+    const h = CONFIG.hospitals.find(x=>x.id===routedId);
+    log(`Destination changed → <b>${h.name}</b>${routeInfo.rerouted?" (preferred facility on diversion)":""}`, "warn");
+  }
+  state.lastRoutedId = routedId;
+  state.lastOutputs = out;
+}
+
+/* ---------- master recalc ---------- */
+const recalc = guard(function(logChanges = true, render = true){
+  const out = computeOutputs();
+  const routedType = state.overrides.routing ? state.overrides.routing.value : out.routing;
+  const routeInfo = pickHospital(routedType);
+  if(render && !state.replayMode){
+    renderVitals(out);
+    renderTrends(state.history, true);
+    renderInventory(out);
+    renderDecisions(out, routeInfo);
+    renderBoard(routeInfo);
+    renderRoster(out);
+    renderCompleteness();
+    renderInterventions();
+  }
+  if(logChanges) diffAndLog(out, routeInfo); else { state.lastOutputs = out; state.lastRoutedId = routeInfo.pick ? routeInfo.pick.id : null; }
+  return out;
+});
+
+function pushHistory(){
+  state.history.push({ t: Date.now(), ...state.vitals });
+  if(state.history.length > 400) state.history.shift();
+  const rs = $("replaySlider");
+  rs.max = state.history.length - 1;
+  if(!state.replayMode) rs.value = rs.max;
+  checkPredictions();
+}
+
+/* ---------- replay (Prompt 4) ---------- */
+function enterReplay(idx){
+  state.replayMode = true;
+  document.body.classList.add("replaying");
+  const frame = state.history[idx];
+  if(!frame) return;
+  const out = computeOutputs(frame);
+  const routeInfo = pickHospital(state.overrides.routing ? state.overrides.routing.value : out.routing);
+  renderVitals(out, frame);
+  renderTrends(state.history.slice(0, idx+1), false);
+  renderInventory(out);
+  renderDecisions(out, routeInfo);
+  renderInterventions();
+}
+function exitReplay(){
+  if(!state.replayMode) return;
+  state.replayMode = false;
+  document.body.classList.remove("replaying");
+  $("replaySlider").value = $("replaySlider").max;
+  state.invSig = ""; /* force refresh */
+  recalc(false);
+  log("⏪ Replay closed — back to live view.");
+}
+
+/* ---------- interventions (Prompt 4) ---------- */
+function startIntervention(key){
+  if(state.replayMode) return;
+  if(state.activeIv[key]) return;
+  const iv = CONFIG.interventions[key];
+  state.activeIv[key] = iv.duration;
+  if(iv.consumes){
+    const item = CONFIG.inventoryRuntime.find(i=>i.id===iv.consumes);
+    if(item && item.stock > 0){ item.stock--; log(`Inventory used: ${item.name} — stock now ×${item.stock}`); }
+  }
+  log(`💉 Crew intervention started: <b>${iv.label}</b> — ${iv.note} (${iv.duration}s effect)`, "ok");
+  renderInterventions();
+}
+function applyInterventions(){
+  const keys = Object.keys(state.activeIv);
+  if(!keys.length) return false;
+  keys.forEach(key=>{
+    const iv = CONFIG.interventions[key];
+    Object.entries(iv.effects).forEach(([vk,delta])=>{
+      const cur = state.vitals[vk];
+      let nv = cur + delta;
+      if(iv.caps && iv.caps[vk] !== undefined){
+        if(delta > 0){
+          /* cap is a ceiling for improvement — never drag a vital DOWN to it */
+          nv = cur >= iv.caps[vk] ? cur : Math.min(nv, iv.caps[vk]);
+        } else {
+          /* cap is a floor for reduction — never push a vital UP to it */
+          nv = cur <= iv.caps[vk] ? cur : Math.max(nv, iv.caps[vk]);
+        }
+      }
+      state.vitals[vk] = clamp(nv, VMETA[vk] ? VMETA[vk].min : 0, VMETA[vk] ? VMETA[vk].max : 999);
+    });
+    state.activeIv[key]--;
+    if(state.activeIv[key] <= 0){
+      delete state.activeIv[key];
+      log(`Intervention complete: ${iv.label} — patient response recorded.`, "ok");
+    }
+  });
+  renderInterventions();
+  return true;
+}
+
+/* ---------- scenario / reset ---------- */
+function loadScenario(key, quiet){
+  state.scenarioKey = key;
+  state.vitals = { ...CONFIG.scenarios[key].vitals };
+  state.history = [];
+  state.overrides = {}; state.accepted = {};
+  state.warned = {}; state.lastStatuses = {}; state.lastOutputs = null;
+  state.activeIv = {}; state.lastRoutedId = null;
+  state.predictions = state.predictions.filter(p => p.done);  /* drop stale unresolved forecasts */
+  state.invSig = ""; state.boardSig = ""; state.rosterSig = ""; state.ivSig = "";
+  exitReplaySilently();
+  pushHistory();
+  if(!quiet) log(`Scenario loaded: <b>${CONFIG.scenarios[key].label}</b> — HR ${state.vitals.hr}, SpO₂ ${state.vitals.spo2}%, BP ${state.vitals.sys}/${state.vitals.dia}, RR ${state.vitals.rr}`);
+  recalc(false);
+  const out = computeOutputs();
+  state.lastStatuses = { ...out.statuses };
+}
+function exitReplaySilently(){
+  state.replayMode = false;
+  document.body.classList.remove("replaying");
+}
+
+function stopTransport(silent){
+  if(state.transportTimer){ clearInterval(state.transportTimer); state.transportTimer = null; }
+  $("btnStart").disabled = false;
+  if(!silent) log("Transport simulation stopped.");
+}
+
+function startTransport(){
+  if(state.transportTimer) return;
+  if(state.replayMode) exitReplay();   /* never start a live run while frozen in replay */
+  state.transportTicks = 0;
+  $("btnStart").disabled = true;
+  log(`▶ Transport started — vitals now drifting per "${CONFIG.scenarios[state.scenarioKey].label}" profile (simulated feed)`);
+  state.transportTimer = setInterval(guard(()=>{
+    const d = CONFIG.drift[CONFIG.scenarios[state.scenarioKey].mechanism];
+    const j = () => (Math.random()-0.5)*0.6;   // sensor jitter
+    state.vitals.hr   = clamp(state.vitals.hr  + d.hr  + j(), VMETA.hr.min,  VMETA.hr.max);
+    state.vitals.spo2 = clamp(state.vitals.spo2+ d.spo2+ j()*0.4, VMETA.spo2.min, VMETA.spo2.max);
+    state.vitals.sys  = clamp(state.vitals.sys + d.sys + j(), VMETA.sys.min, VMETA.sys.max);
+    state.vitals.dia  = clamp(state.vitals.dia + d.sys*0.6 + j()*0.5, 30, 140);
+    state.vitals.rr   = clamp(state.vitals.rr  + d.rr  + j()*0.3, VMETA.rr.min, VMETA.rr.max);
+    applyInterventions();      /* crew actions counteract the drift — the two-way loop */
+    pushHistory();
+    recalc(true, !state.replayMode);
+    state.transportTicks++;
+    if(state.transportTicks >= CONFIG.transportSeconds){
+      stopTransport(true);
+      log("Transport segment complete — twin holding last received state.", "ok");
+    }
+  }), 1000);
+}
+
+function resetCore(){
+  stopTransport(true);
+  $("logList").innerHTML = "";
+  state.logText = [];
+  state.predictions = []; state.fcHits = 0; state.fcTotal = 0; renderFc();
+  CONFIG.hospitals.forEach((h,i)=> h.status = HOSP_DEFAULTS[i]);
+  const epi = CONFIG.inventoryRuntime.find(i=>i.id==="epi");
+  if(epi) epi.stock = EPI_STOCK_DEFAULT;
+  $("errBanner").className = "";
+  loadScenario($("scenarioSel").value, true);
+}
+const fullReset = guard(function(){
+  stopDemo(true);
+  endWalk(true);
+  resetCore();
+  log("↺ Session reset — history, log, overrides, forecasts, and hospital statuses cleared.");
+});
+
+/* ---------- manual nudges & slider ---------- */
+const nudge = guard(function(key, delta){
+  if(state.replayMode) exitReplay();
+  state.vitals[key] = clamp(state.vitals[key] + delta, VMETA[key].min, VMETA[key].max);
+  if(key==="sys") state.vitals.dia = clamp(state.vitals.dia + delta*0.6, 30, 140);
+  pushHistory();
+  log(`Presenter nudged ${VMETA[key].label} to ${Math.round(state.vitals[key])} ${VMETA[key].unit}`);
+  recalc();
+});
+
+/* ---------- demo mode (auto-play) ---------- */
+function caption(txt){
+  const el = $("demoCaption");
+  if(!txt){ el.className=""; el.textContent=""; return; }
+  el.className = "on";
+  el.innerHTML = "<b>DEMO</b> — " + txt;
+}
+function stopDemo(silent){
+  state.demoTimers.forEach(clearTimeout);
+  state.demoTimers = [];
+  if(state.demoRunning && !silent) log("Demo stopped.");
+  state.demoRunning = false;
+  caption("");
+  $("btnDemo").textContent = "🎬 Run demo";
+}
+const runDemo = guard(function(){
+  if(state.demoRunning){ stopDemo(); stopTransport(true); return; }
+  endWalk(true);
+  resetCore();
+  state.demoRunning = true;
+  $("btnDemo").textContent = "⏹ Stop demo";
+  log("🎬 Guided demo started — hands-free walkthrough of a deteriorating cardiac patient.");
+  const step = (ms, fn) => state.demoTimers.push(setTimeout(guard(fn), ms));
+  step(300,  ()=>{ $("scenarioSel").value = "cardiac"; loadScenario("cardiac"); caption("A suspected cardiac patient is loaded. The twin scores the starting vitals instantly — note the early-warning banner and the equipment already flagged, each with a reason."); });
+  step(6000, ()=>{ caption("Starting transport. The vitals will now drift the way a deteriorating cardiac patient's would — watch the twin recalculate live."); startTransport(); });
+  step(12000,()=>{ caption("Blood pressure is falling and heart rate is climbing — the twin escalates equipment, responder level, and triage priority on its own, and logs every change."); });
+  step(17000,()=>{ caption("The crew acts: IV fluids are given. The patient responds, and the twin reacts to the improvement — a real two-way loop."); startIntervention("fluids"); });
+  step(24000,()=>{ caption("Dashed forecast lines project each vital ahead — and the scorecard checks whether those predictions came true."); });
+  step(30000,()=>{ caption("Every recommendation has Accept / Override, hospitals show live availability, and the replay slider can rewind the whole run."); stopTransport(true); });
+  step(36000,()=>{ caption("Demo complete. Use 'Download run summary' or 'Print view' for a record of this session."); });
+  step(41000,()=>{ stopDemo(true); log("🎬 Demo finished.", "ok"); });
+});
+
+/* ---------- guided walkthrough (Prompt 5 — click-through, can't fumble) ---------- */
+const WALK_STEPS = [
+  { text:"Welcome! This is a digital twin of an ambulance patient — it takes live vitals and continuously recalculates four crew decisions. Click Next to walk through it step by step." },
+  { text:"Step 1 — Load a patient. We've selected 'Suspected cardiac event.' The twin scores the starting vitals instantly: check the early-warning banner and the flagged equipment, each with a plain-language reason.",
+    act:()=>{ $("scenarioSel").value="cardiac"; loadScenario("cardiac"); } },
+  { text:"Step 2 — Start transport. Vitals now drift like a deteriorating cardiac patient. Watch the trend lines fill in and the dashed forecast segments project ahead.",
+    act:()=> startTransport() },
+  { text:"Step 3 — The twin escalates on its own. As blood pressure falls and heart rate climbs, equipment, responder level, routing, and priority all update — and every change lands in the event log with a timestamp." },
+  { text:"Step 4 — The crew acts. We just gave IV fluids: the patient responds and the twin reacts to the improvement. Recommendation → action → response → recalculation. That two-way loop is what makes it a twin.",
+    act:()=> startIntervention("fluids") },
+  { text:"Step 5 — Trust, but verify. The forecast scorecard tracks whether the twin's predictions came true, and the replay slider lets you rewind the whole run for a debrief." },
+  { text:"Step 6 — The human decides. Every recommendation has Accept / Override, the hospital board shows live availability with automatic rerouting on diversion, and everything is written to the audit log. That's the tour — press End." }
+];
+function renderWalk(){
+  $("walkStep").textContent = (state.walkIdx+1) + "/" + WALK_STEPS.length;
+  $("walkText").textContent = WALK_STEPS[state.walkIdx].text;
+  $("walkBack").disabled = state.walkIdx === 0;
+  $("walkNext").disabled = state.walkIdx === WALK_STEPS.length-1;
+}
+const startWalk = guard(function(){
+  if(state.walkIdx >= 0){ endWalk(); return; }
+  stopDemo(true);
+  resetCore();
+  state.walkIdx = 0;
+  $("walkBar").className = "on";
+  $("btnWalk").textContent = "⏹ End walkthrough";
+  log("🧭 Guided walkthrough started.");
+  renderWalk();
+});
+const walkNext = guard(function(){
+  if(state.walkIdx >= WALK_STEPS.length-1) return;
+  state.walkIdx++;
+  const s = WALK_STEPS[state.walkIdx];
+  if(s.act) s.act();
+  renderWalk();
+});
+const walkBack = guard(function(){
+  if(state.walkIdx <= 0) return;
+  state.walkIdx--;
+  renderWalk();
+});
+function endWalk(silent){
+  if(state.walkIdx < 0) return;
+  state.walkIdx = -1;
+  $("walkBar").className = "";
+  $("btnWalk").textContent = "🧭 Walkthrough";
+  if(!silent) log("🧭 Walkthrough ended.");
+}
+
+/* ---------- export / snapshot ---------- */
+const exportSummary = guard(function(){
+  const out = computeOutputs();
+  const sc = CONFIG.scenarios[state.scenarioKey];
+  const routeInfo = pickHospital(state.overrides.routing ? state.overrides.routing.value : out.routing);
+  const lines = [];
+  lines.push("AMBULANCE PATIENT DIGITAL TWIN — RUN SUMMARY (v6)");
+  lines.push("Educational prototype — simulated data, not for clinical use");
+  lines.push("Generated: " + new Date().toString());
+  lines.push("");
+  lines.push("SCENARIO: " + sc.label);
+  lines.push("");
+  lines.push("FINAL STATE");
+  lines.push(`  HR ${Math.round(state.vitals.hr)} bpm · SpO2 ${Math.round(state.vitals.spo2)}% · BP ${Math.round(state.vitals.sys)}/${Math.round(state.vitals.dia)} · RR ${Math.round(state.vitals.rr)}`);
+  lines.push(`  Early-warning score (adapted NEWS2): ${out.news} — ${out.band} risk`);
+  lines.push(`  Shock index: ${out.si.toFixed(2)}${out.si>CONFIG.shockIndexFlag?"  (FLAGGED)":""}`);
+  lines.push(`  Forecast accuracy: ${state.fcTotal ? state.fcHits+"/"+state.fcTotal : "no predictions resolved"}`);
+  lines.push("");
+  lines.push("FINAL DECISIONS");
+  DECISION_KEYS.forEach(k=>{
+    const rec = decisionValue(out,k);
+    const ovr = state.overrides[k];
+    let line = `  ${k.toUpperCase()}: ${ovr ? ovr.value + "  [CREW OVERRIDE — twin recommended: " + rec + "]" : rec}`;
+    if(k==="routing" && routeInfo.pick) line += `  → ${routeInfo.pick.name} (ETA ${routeInfo.pick.etaMin} min)`;
+    lines.push(line);
+  });
+  lines.push("");
+  lines.push("VITALS TIMELINE (oldest → newest)");
+  const hstep = Math.max(1, Math.floor(state.history.length/30));
+  state.history.forEach((h,i)=>{
+    if(i % hstep !== 0 && i !== state.history.length-1) return;
+    lines.push(`  ${new Date(h.t).toTimeString().slice(0,8)}  HR ${Math.round(h.hr)}  SpO2 ${Math.round(h.spo2)}%  BP ${Math.round(h.sys)}/${Math.round(h.dia)}  RR ${Math.round(h.rr)}`);
+  });
+  lines.push("");
+  lines.push("EVENT LOG (newest first)");
+  state.logText.forEach(l=>lines.push("  "+l));
+  lines.push("");
+  lines.push("Protocols referenced (simulated): " + Object.values(CONFIG.protocols).join(" | "));
+  const blob = new Blob([lines.join("\n")], { type:"text/plain" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "digital-twin-run-summary.txt";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href), 2000);
+  log("⬇ Run summary downloaded (local file — no external services used).", "ok");
+});
+
+/* ---------- print view (Prompt 5) ---------- */
+const printView = guard(function(){
+  const out = computeOutputs();
+  const sc = CONFIG.scenarios[state.scenarioKey];
+  const routeInfo = pickHospital(state.overrides.routing ? state.overrides.routing.value : out.routing);
+  const decRows = DECISION_KEYS.map(k=>{
+    const rec = decisionValue(out,k);
+    const ovr = state.overrides[k];
+    let val = ovr ? `${ovr.value} (crew override; twin recommended ${rec})` : rec;
+    if(k==="routing" && routeInfo.pick) val += ` → ${routeInfo.pick.name}, ETA ${routeInfo.pick.etaMin} min`;
+    return `<tr><th>${k.charAt(0).toUpperCase()+k.slice(1)}</th><td>${val}</td></tr>`;
+  }).join("");
+  const logRows = state.logText.slice(0,25).map(l=>`<tr><td>${l.slice(0,8)}</td><td>${l.slice(8).trim()}</td></tr>`).join("");
+  $("printArea").innerHTML = `
+    <h1>Ambulance Patient Digital Twin — Run Summary</h1>
+    <div class="p-sub">Educational prototype · simulated data · not for clinical use · generated ${new Date().toLocaleString()}</div>
+    <h2>Patient state</h2>
+    <table>
+      <tr><th>Scenario</th><td>${sc.label}</td></tr>
+      <tr><th>Vitals</th><td>HR ${Math.round(state.vitals.hr)} bpm · SpO₂ ${Math.round(state.vitals.spo2)}% · BP ${Math.round(state.vitals.sys)}/${Math.round(state.vitals.dia)} · RR ${Math.round(state.vitals.rr)}</td></tr>
+      <tr><th>Early-warning score</th><td>${out.news} (${out.band} risk) — adapted NEWS2 (simulated)</td></tr>
+      <tr><th>Shock index</th><td>${out.si.toFixed(2)}${out.si>CONFIG.shockIndexFlag?" — FLAGGED":""}</td></tr>
+      <tr><th>Forecast accuracy</th><td>${state.fcTotal ? state.fcHits+"/"+state.fcTotal+" predictions verified" : "no predictions resolved yet"}</td></tr>
+    </table>
+    <h2>Twin decisions</h2>
+    <table>${decRows}</table>
+    <h2>Event log (latest 25)</h2>
+    <table><tr><th style="width:70px">Time</th><th>Event</th></tr>${logRows}</table>`;
+  log("🖨 Print view opened — one-page summary sent to the print dialog.");
+  window.print();
+});
+
+/* ---------- simulated connectivity + heartbeat ---------- */
+function scheduleDrop(){
+  const c = CONFIG.connection;
+  state.nextDropAt = state.elapsed + c.dropEveryMin + Math.floor(Math.random()*(c.dropEveryMax-c.dropEveryMin));
+}
+function scheduleDiversion(){
+  const c = CONFIG.diversion;
+  state.nextDivAt = state.elapsed + c.everyMin + Math.floor(Math.random()*(c.everyMax-c.everyMin));
+}
+const heartbeat = guard(function(){
+  state.elapsed++;
+  $("clock").textContent = now();
+
+  /* interventions keep working even when transport is idle (patient still responds) */
+  if(!state.transportTimer && Object.keys(state.activeIv).length){
+    applyInterventions();
+    pushHistory();
+    recalc(true, !state.replayMode);
+  }
+
+  /* monitor drop-out */
+  const mon = $("connMonitor");
+  if(!state.monitorDown && state.elapsed >= state.nextDropAt){
+    state.monitorDown = true;
+    mon.className = "conn down";
+    mon.innerHTML = `<span class="dot"></span>Monitor: signal lost — reconnecting…`;
+    log("📡 Monitor signal lost — twin continues on last received data (local operation).", "warn");
+    setTimeout(guard(()=>{
+      state.monitorDown = false;
+      mon.className = "conn";
+      mon.innerHTML = `<span class="dot"></span>Monitor: connected`;
+      log("📡 Monitor re-synced — live feed restored.", "ok");
+      scheduleDrop();
+    }), CONFIG.connection.outageSeconds*1000);
+  }
+
+  /* hospital diversion event (Prompt 4) */
+  if(!state.divHospital && state.elapsed >= state.nextDivAt){
+    const h = CONFIG.hospitals.find(x=>x.id===state.lastRoutedId) || CONFIG.hospitals[Math.floor(Math.random()*CONFIG.hospitals.length)];
+    state.divHospital = h;
+    h.status = "diversion";
+    log(`🏥 ${h.name} is now ON DIVERSION (simulated CAD update)${h.id===state.lastRoutedId?" — twin is rerouting":""}`, "crit");
+    recalc(true, !state.replayMode);
+    setTimeout(guard(()=>{
+      if(h.status === "diversion"){   /* skip if a reset already restored the board */
+        h.status = HOSP_DEFAULTS[CONFIG.hospitals.indexOf(h)];
+        log(`🏥 ${h.name} reopened — accepting patients again.`, "ok");
+        recalc(true, !state.replayMode);
+      }
+      state.divHospital = null;
+      scheduleDiversion();
+    }), CONFIG.diversion.outageSeconds*1000);
+  }
+});
+
+/* ---------- wiring ---------- */
+const init = guard(function(){
+  const sel = $("scenarioSel");
+  sel.innerHTML = Object.entries(CONFIG.scenarios).map(([k,s])=>`<option value="${k}">${s.label}</option>`).join("");
+  sel.onchange = guard(()=> loadScenario(sel.value));
+
+  $("btnStart").onclick = guard(startTransport);
+  $("btnReset").onclick = fullReset;
+  $("btnDemo").onclick = runDemo;
+  $("btnWalk").onclick = startWalk;
+  $("walkNext").onclick = walkNext;
+  $("walkBack").onclick = walkBack;
+  $("walkEnd").onclick = guard(()=> endWalk());
+  $("btnExport").onclick = exportSummary;
+  $("btnPrint").onclick = printView;
+  $("btnErrReset").onclick = fullReset;
+
+  $("btnPres").onclick = guard(()=>{
+    const on = document.body.classList.toggle("pres");
+    $("btnPres").textContent = on ? "🖥 Exit presentation" : "🖥 Presentation mode";
+    log(on ? "🖥 Presentation mode ON — enlarged view for the projector." : "🖥 Presentation mode OFF.");
+  });
+
+  $("btnHelp").onclick = guard(()=>{ $("helpModal").className = "on"; });
+  $("helpClose").onclick = guard(()=>{ $("helpModal").className = ""; });
+  $("helpModal").onclick = guard(e=>{ if(e.target === $("helpModal")) $("helpModal").className = ""; });
+
+  document.querySelectorAll("[data-nudge]").forEach(b=>{
+    b.onclick = guard(()=> nudge(b.dataset.nudge, parseFloat(b.dataset.d)));
+  });
+  document.querySelectorAll("[data-conf]").forEach(s=>{
+    s.onchange = guard(()=>{
+      state.confidence[s.dataset.conf] = s.value;
+      s.className = "conf " + (s.value!=="confirmed" ? s.value : "");
+      log(`Data confidence updated — ${VMETA[s.dataset.conf].label}: ${s.value}`);
+      renderCompleteness();
+    });
+  });
+  const slider = $("spo2Slider");
+  slider.oninput = guard(()=>{
+    const dragged = parseInt(slider.value,10);   /* capture before exitReplay re-renders the slider */
+    if(state.replayMode) exitReplay();
+    state.vitals.spo2 = dragged;
+    pushHistory();
+    recalc();
+  });
+  slider.onchange = guard(()=> log(`Presenter set SpO₂ to ${slider.value}% via slider`));
+
+  const rs = $("replaySlider");
+  rs.oninput = guard(()=>{
+    const idx = parseInt(rs.value,10);
+    if(idx >= state.history.length - 1){ exitReplay(); return; }
+    if(!state.replayMode) log("⏪ Replay opened — scrubbing back through the recorded run (live feed keeps recording).");
+    enterReplay(idx);
+  });
+  $("btnLive").onclick = guard(exitReplay);
+
+  scheduleDrop();
+  scheduleDiversion();
+  setInterval(heartbeat, 1000);
+
+  loadScenario("stable", true);
+  renderFc();
+  log("Digital twin v6 initialized. Feeds: Monitor ✔ · Dispatch/CAD ✔ · Patient record: partial (simulated).");
+});
+init();
+
+/* debug/test handle (harmless in production) */
+window.__twin = { state, recalc, computeOutputs, startIntervention, applyInterventions, heartbeat, pushHistory, CONFIG };
+</script>
+</body>
+</html>
