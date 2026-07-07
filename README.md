@@ -10,6 +10,14 @@ Built for **ITAI 4371 – Digital Twins & Virtual Simulation** at **Houston Comm
 
 ---
 
+## LIVE DEMO
+
+View the interactive simulation here:
+
+[Launch Ambulance Digital Twin](https://code-ruto.github.io/Ambulance-Patient-Digital-Twin/)
+
+---
+
 ## 📖 Overview
 
 Emergency medical crews often have to make critical decisions with incomplete information.
